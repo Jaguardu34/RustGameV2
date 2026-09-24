@@ -1,3 +1,4 @@
+use avian3d::{collision::collider::Collider, dynamics::rigid_body::RigidBody};
 use bevy::prelude::*;
 
 pub struct MyScenePlugin;
@@ -6,8 +7,8 @@ pub struct MyScenePlugin;
 impl Plugin for MyScenePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, (scene.spawn(), add_spheres))
-            .add_systems(Update, update_scene);
+            .add_systems(Startup, scene.spawn());
+            //.add_systems(Update, update_scene);
     }
 }
 
@@ -20,12 +21,20 @@ pub struct CameraTarget;
 fn scene() -> impl SceneList {
     bsn_list! [
         (
-            #Sphere
+            #Ball
             Mesh3d(asset_value(Sphere::new(1.0)))
+            MeshMaterial3d::<StandardMaterial>(asset_value(Color::srgb(1.0, 0.0, 0.0)))
+            RigidBody::from(RigidBody::Dynamic)
+            Collider::sphere(1.0)
+            Transform::from_xyz(0.0, 3.0, 0.0)
+        )
+        (
+            #Ground
+            Mesh3d(asset_value(Cuboid::new(100.0, 1.0, 100.0)))
             MeshMaterial3d::<StandardMaterial>(asset_value(Color::WHITE))
-            Transform::from_translation(Vec3::ZERO)
-            Movable
-            CameraTarget
+            RigidBody::from(RigidBody::Static)
+            Collider::cuboid(100.0, 1.0, 100.0)
+
         ),
         (
             PointLight {

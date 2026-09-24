@@ -1,3 +1,4 @@
+use avian3d::PhysicsPlugins;
 use bevy::{prelude::*, window::WindowResolution};
 
 use bevy::{
@@ -6,11 +7,13 @@ use bevy::{
     text::FontSmoothing,
 };
 
-
+pub mod player;
 pub mod scene;
 pub mod my_camera;
 use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
+
+use crate::player::PlayerPlugin;
 
 fn main() {
     App::new()
@@ -18,14 +21,14 @@ fn main() {
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "RustGameV2".to_string(),
-                    resolution: WindowResolution::new(1200, 800),
-                    resizable: false,
                     present_mode: bevy::window::PresentMode::AutoNoVsync,
                     ..Default::default()
                 }),
                 ..Default::default()
             }))
-        .add_plugins((MyCamPlugin, MyScenePlugin))
+        // avian3d for physics
+        .add_plugins(PhysicsPlugins::default())
+        .add_plugins((PlayerPlugin, MyScenePlugin))
         // to show FPS
         .add_plugins(FpsOverlayPlugin {
                 config: FpsOverlayConfig {
