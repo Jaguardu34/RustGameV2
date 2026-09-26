@@ -1,18 +1,17 @@
-use avian3d::{collision::collider::Collider, dynamics::rigid_body::{LinearVelocity, RigidBody, mass_properties::components::Mass}};
-use bevy::{input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, math::VectorSpace, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
+use avian3d::{collision::collider::Collider, dynamics::rigid_body::{LinearVelocity, RigidBody, forces::{Forces, WriteRigidBodyForces}, mass_properties::components::Mass}, spatial_query::{SpatialQuery, SpatialQueryFilter}};
+use bevy::{core_pipeline::tonemapping::Tonemapping, input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
+
+use crate::resources::GameResources;
 
 pub struct PlayerPlugin;
 
 
-#[derive(Resource, Default)]
-struct MouseGrabbed(bool);
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(MouseGrabbed(false))
             .add_systems(Startup, create_player)
-            .add_systems(Update , (handle_mouse_motion, update, handle_move_input, handle_mouse_grab));
+            .add_systems(Update , (handle_mouse_motion, update, handle_move_input, handle_mouse_grab, handle_jump));
     }
 }
 
@@ -21,9 +20,9 @@ const MOUSE_SENSITIVITY_PITCH: f32 = 0.005;
 
 #[derive(Component)]
 pub struct Player {
-    life: f32,
-    jump_strenght: f32,
-    speed: f32,
+    pub life: f32,
+    pub jump_strenght: f32,
+    pub speed: f32,
 }
 
 impl Player {
@@ -52,12 +51,18 @@ fn create_player(mut commands: Commands) {
             children![
                 (
                     Camera3d::default(),
+                    Projection::from(PerspectiveProjection {
+                        fov: 90.0_f32.to_radians(),
+                        ..default()
+                    }),
                     Transform::from_xyz(0.0, 1.5, 0.0),
                     PlayerCam,
-                    Bloom::NATURAL
+                    Bloom::NATURAL,
+                    Tonemapping::TonyMcMapface,
                 )
             ]
     ));
+
 }
 
 
@@ -65,10 +70,10 @@ fn handle_mouse_motion(
     mut mouse_motion: MessageReader<MouseMotion>,
     mut player_query: Query<(&mut Transform, &mut CameraRotation), (With<Player>, Without<PlayerCam>)>,
     mut player_cam_query: Query<&mut Transform, (With<PlayerCam>, Without<Player>)>,
-    mouse_grabbed: Res<MouseGrabbed>
+    game_resources: Res<GameResources>
 ) {
 
-    if !mouse_grabbed.0 {
+    if !game_resources.mouse_grabbed {
         return;
     };
     let Ok(mut player_cam) = player_cam_query.single_mut() else {
@@ -97,10 +102,9 @@ fn update(
 }
 
 
-const MAX_SPEED: f32 = 10.0;
 
-fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&mut LinearVelocity, &GlobalTransform), With<Player>>) {
-    let Ok((mut player_velocity, player_transform)) = player_query.single_mut() else {return;};
+fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&mut LinearVelocity, &GlobalTransform, &Player), With<Player>>) {
+    let Ok((mut player_velocity, player_transform, player_info)) = player_query.single_mut() else {return;};
 
     let mut vec = Vec3::ZERO;
 
@@ -124,8 +128,8 @@ fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&
     vec = vec.normalize_or_zero();
     
     if vec != Vec3::ZERO {
-        player_velocity.x = vec.x * 10.0;
-        player_velocity.z = vec.z * 10.0;
+        player_velocity.x = vec.x * player_info.speed;
+        player_velocity.z = vec.z * player_info.speed;
     } else {
         player_velocity.x = player_velocity.x * 0.98;
         player_velocity.z = player_velocity.z * 0.98;
@@ -135,26 +139,58 @@ fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&
 
 
 fn handle_mouse_grab(
-    mut mouse_grabbed: ResMut<MouseGrabbed>, 
+    mut game_resources: ResMut<GameResources>, 
     mut mouse_button: MessageReader<MouseButtonInput>, 
     keys: Res<ButtonInput<KeyCode>>, 
     mut cursor_option: Single<&mut CursorOptions>, 
     window: Single<&Window, With<PrimaryWindow>>)
 {
-    if keys.just_pressed(KeyCode::Escape) && mouse_grabbed.0 && window.cursor_position().is_some(){
-        mouse_grabbed.0 = false;
+    if keys.just_pressed(KeyCode::Escape) && game_resources.mouse_grabbed && window.cursor_position().is_some(){
+        game_resources.mouse_grabbed = false;
     }
     for button in mouse_button.read() {
-        if button.state == ButtonState::Pressed && button.button == MouseButton::Left && !mouse_grabbed.0 {
-            mouse_grabbed.0 = true;
+        if button.state == ButtonState::Pressed && button.button == MouseButton::Left && !game_resources.mouse_grabbed {
+            game_resources.mouse_grabbed = true;
         }
     }
 
-    if mouse_grabbed.0 {
+    if game_resources.mouse_grabbed {
         cursor_option.visible = false;
         cursor_option.grab_mode = bevy::window::CursorGrabMode::Confined
     } else {
         cursor_option.visible = true;
         cursor_option.grab_mode = bevy::window::CursorGrabMode::None;
     }
+}
+
+
+
+
+fn handle_jump(
+    keys: Res<ButtonInput<KeyCode>>,
+    spatial_query: SpatialQuery,
+    mut player_q: Query<(&GlobalTransform, Entity, Forces, &Player), With<Player>>,
+    game_resources: Res<GameResources>
+) {
+    if !game_resources.mouse_grabbed {
+        return;
+    }
+    let Ok((player_transform, player_entity, mut player_forces, player_info)) = player_q.single_mut() else {return;};
+
+    let origin = player_transform.translation();
+    let direction = Dir3::NEG_Y;
+
+    let max_distance = 1.505;
+    let solid = true;
+    let filter = SpatialQueryFilter::default().with_excluded_entities([player_entity]);
+
+    let hit = spatial_query.cast_ray(origin, direction, max_distance, solid, &filter);
+
+
+
+    if keys.pressed(KeyCode::Space) && hit.is_some() {
+        player_forces.apply_linear_impulse(Vec3::new(0.0, player_info.jump_strenght, 0.0));
+    }
+
+
 }

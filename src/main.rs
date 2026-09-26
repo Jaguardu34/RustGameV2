@@ -7,13 +7,17 @@ use bevy::{
     text::FontSmoothing,
 };
 
+pub mod building;
+pub mod resources;
 pub mod player;
 pub mod scene;
 pub mod my_camera;
 use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
 
+use crate::building::BuildingPlugin;
 use crate::player::PlayerPlugin;
+use crate::resources::GameResources;
 
 fn main() {
     App::new()
@@ -28,7 +32,7 @@ fn main() {
             }))
         // avian3d for physics
         .add_plugins(PhysicsPlugins::default())
-        .add_plugins((PlayerPlugin, MyScenePlugin))
+        .add_plugins((PlayerPlugin, MyScenePlugin, BuildingPlugin))
         // to show FPS
         .add_plugins(FpsOverlayPlugin {
                 config: FpsOverlayConfig {
@@ -55,5 +59,7 @@ fn main() {
                     },
                 },
             })
+        //game resources
+        .insert_resource(GameResources::default())
         .run();   
 }

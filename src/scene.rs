@@ -39,9 +39,10 @@ fn scene() -> impl SceneList {
         (
             PointLight {
                 shadow_maps_enabled: true,
+                color: Color::Srgba(Srgba { red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0 })
             }
             Transform::from_translation(Vec3::new(5.0, 5.0, 5.0))
-        )
+        ),
     ]
 }
 
