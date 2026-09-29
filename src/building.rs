@@ -1,3 +1,4 @@
+use avian3d::{collision::collider::{Collider, CollidingEntities}, dynamics::rigid_body::RigidBody};
 use bevy::{ecs::entity, input::mouse::{MouseScrollUnit, MouseWheel}, light::{NotShadowCaster, NotShadowReceiver}, prelude::*};
 
 use crate::{player::PlayerCam, resources::GameResources};
@@ -13,6 +14,9 @@ impl Plugin for BuildingPlugin {
 
 #[derive(Component)]
 pub struct Overlay;
+
+#[derive(Component)]
+pub struct PlacedByPlayer;
 
 pub struct BuildDistance {
     value: f32
@@ -40,8 +44,14 @@ fn update_overlay(
     mut overlay_q: Query<(Entity, &mut Transform), With<Overlay>>,
     mut ev_mouse_scroll: MessageReader<MouseWheel>
     ) {
+
     if !game_resource.mouse_grabbed {
         return
+    }
+
+    if keys.just_pressed(KeyCode::KeyQ) {
+        game_resource.building = !game_resource.building;
+        
     }
 
     let Ok(player_cam_transform) = player_cam_q.single() else {return;};
@@ -51,7 +61,7 @@ fn update_overlay(
 
     
 
-    if buttons.pressed(MouseButton::Right){
+    if game_resource.building{
         if !*overlay_spawned {
             commands.spawn((
                     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -60,7 +70,8 @@ fn update_overlay(
                     Overlay,
                     NotShadowCaster,
                     NotShadowReceiver,
-        ));
+            ));
+            *overlay_spawned = true;
         } else {
             for (_entity, mut overlay_transform) in overlay_q.iter_mut() {
                 overlay_transform.translation = pos;
@@ -70,7 +81,17 @@ fn update_overlay(
             build_distance.value += ev.y;
         }
         build_distance.value = build_distance.value.clamp(MIN_BUILD_DISTANCE, MAX_BUILD_DISTANCE);
-        *overlay_spawned = true;
+
+        if buttons.just_pressed(MouseButton::Left) {
+                commands.spawn((
+                        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+                        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.0, 0.0))),
+                        Transform::from_translation(pos),
+                        PlacedByPlayer,
+                        RigidBody::Static,
+                        Collider::cuboid(1.0, 1.0, 1.0)
+            ));
+        }
     } else {
         for (entity, _overlay_transform) in overlay_q {
             commands.entity(entity).despawn();

@@ -1,5 +1,6 @@
 use avian3d::{collision::collider::Collider, dynamics::rigid_body::{LinearVelocity, RigidBody, forces::{Forces, WriteRigidBodyForces}, mass_properties::components::Mass}, spatial_query::{SpatialQuery, SpatialQueryFilter}};
-use bevy::{core_pipeline::tonemapping::Tonemapping, input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
+use bevy::{core_pipeline::tonemapping::Tonemapping, ecs::template::OptionTemplate::Some, input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
+use bevy_egui::EguiContexts;
 
 use crate::resources::GameResources;
 
@@ -143,14 +144,20 @@ fn handle_mouse_grab(
     mut mouse_button: MessageReader<MouseButtonInput>, 
     keys: Res<ButtonInput<KeyCode>>, 
     mut cursor_option: Single<&mut CursorOptions>, 
-    window: Single<&Window, With<PrimaryWindow>>)
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut contexts: EguiContexts,
+    )
 {
     if keys.just_pressed(KeyCode::Escape) && game_resources.mouse_grabbed && window.cursor_position().is_some(){
         game_resources.mouse_grabbed = false;
     }
     for button in mouse_button.read() {
         if button.state == ButtonState::Pressed && button.button == MouseButton::Left && !game_resources.mouse_grabbed {
-            game_resources.mouse_grabbed = true;
+            let ctx = contexts.ctx_mut().expect("cant use context");
+            let wants_pointer = ctx.egui_wants_pointer_input() || ctx.is_pointer_over_egui();
+            if !wants_pointer {
+                game_resources.mouse_grabbed = true;
+            }
         }
     }
 

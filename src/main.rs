@@ -7,15 +7,18 @@ use bevy::{
     text::FontSmoothing,
 };
 
+pub mod editor;
 pub mod building;
 pub mod resources;
 pub mod player;
 pub mod scene;
 pub mod my_camera;
+use bevy_egui::EguiPlugin;
 use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
 
 use crate::building::BuildingPlugin;
+use crate::editor::EditorPlugin;
 use crate::player::PlayerPlugin;
 use crate::resources::GameResources;
 
@@ -32,7 +35,7 @@ fn main() {
             }))
         // avian3d for physics
         .add_plugins(PhysicsPlugins::default())
-        .add_plugins((PlayerPlugin, MyScenePlugin, BuildingPlugin))
+        .add_plugins((PlayerPlugin, MyScenePlugin, BuildingPlugin, EditorPlugin))
         // to show FPS
         .add_plugins(FpsOverlayPlugin {
                 config: FpsOverlayConfig {
@@ -61,5 +64,7 @@ fn main() {
             })
         //game resources
         .insert_resource(GameResources::default())
+        // egui plugin for the ediror
+        .add_plugins(EguiPlugin::default())
         .run();   
 }
