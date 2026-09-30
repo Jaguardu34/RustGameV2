@@ -1,5 +1,7 @@
 use avian3d::{collision::collider::Collider, dynamics::rigid_body::RigidBody};
-use bevy::prelude::*;
+use bevy::prelude::*;   
+
+use bevy::gizmos::transform_gizmo::TransformGizmoFocus;
 
 pub struct MyScenePlugin;
 
@@ -27,6 +29,7 @@ fn scene() -> impl SceneList {
             RigidBody::from(RigidBody::Dynamic)
             Collider::sphere(1.0)
             Transform::from_xyz(0.0, 3.0, 0.0)
+            TransformGizmoFocus
         )
         (
             #Ground

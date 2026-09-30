@@ -1,4 +1,5 @@
 use avian3d::PhysicsPlugins;
+use bevy::camera_controller::free_camera::FreeCameraPlugin;
 use bevy::{prelude::*, window::WindowResolution};
 
 use bevy::{
@@ -13,7 +14,7 @@ pub mod resources;
 pub mod player;
 pub mod scene;
 pub mod my_camera;
-use bevy_egui::EguiPlugin;
+use bevy_egui::{EguiGlobalSettings, EguiPlugin};
 use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
 
@@ -66,5 +67,7 @@ fn main() {
         .insert_resource(GameResources::default())
         // egui plugin for the ediror
         .add_plugins(EguiPlugin::default())
+        .add_plugins(FreeCameraPlugin)
+        .add_plugins((TransformGizmoPlugin, MeshPickingPlugin))
         .run();   
 }

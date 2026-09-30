@@ -1,6 +1,6 @@
-use avian3d::{collision::collider::Collider, dynamics::rigid_body::{LinearVelocity, RigidBody, forces::{Forces, WriteRigidBodyForces}, mass_properties::components::Mass}, spatial_query::{SpatialQuery, SpatialQueryFilter}};
-use bevy::{core_pipeline::tonemapping::Tonemapping, ecs::template::OptionTemplate::Some, input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
-use bevy_egui::EguiContexts;
+use avian3d::{collision::collider::Collider, dynamics::rigid_body::{LinearVelocity, LockedAxes, RigidBody, forces::{Forces, WriteRigidBodyForces}, mass_properties::components::Mass}, spatial_query::{SpatialQuery, SpatialQueryFilter}};
+use bevy::{camera::visibility::RenderLayers, core_pipeline::tonemapping::Tonemapping, ecs::template::OptionTemplate::Some, input::{ButtonState, mouse::{MouseButtonInput, MouseMotion}}, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
+use bevy_egui::{EguiContexts, PrimaryEguiContext};
 
 use crate::resources::GameResources;
 
@@ -15,6 +15,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update , (handle_mouse_motion, update, handle_move_input, handle_mouse_grab, handle_jump));
     }
 }
+
 
 const MOUSE_SENSITIVITY_YAW: f32 = 0.005;
 const MOUSE_SENSITIVITY_PITCH: f32 = 0.005;
@@ -34,32 +35,47 @@ impl Player {
 
 #[derive(Component, Default)]
 pub struct CameraRotation{
-    yaw: f32,
-    pitch: f32,
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
 #[derive(Component)]
 pub struct PlayerCam;
 
-fn create_player(mut commands: Commands) {
+fn create_player(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>
+) {
     commands.spawn((
+            Name::new("Player"),
             Player::new(10.0, 10.0, 10.0),
             RigidBody::Dynamic,
             Collider::capsule(0.5, 1.5),
             Transform::from_xyz(0.0, 10.0, 4.0),
             CameraRotation::default(),
             Mass(5.0),
+            LockedAxes::new().lock_rotation_x().lock_rotation_z(),
+            Mesh3d(meshes.add(Capsule3d::new(0.5, 1.5))),
+            MeshMaterial3d(materials.add(Color::WHITE)),
+            RenderLayers::layer(1),
             children![
                 (
+                    Name::new("PlayerCam"),
                     Camera3d::default(),
                     Projection::from(PerspectiveProjection {
                         fov: 90.0_f32.to_radians(),
                         ..default()
                     }),
+                    Camera {
+                        is_active: true,
+                        ..Default::default()
+                    },
                     Transform::from_xyz(0.0, 1.5, 0.0),
                     PlayerCam,
-                    Bloom::NATURAL,
-                    Tonemapping::TonyMcMapface,
+                    //Bloom::NATURAL,
+                    //Tonemapping::TonyMcMapface,
+                    TransformGizmoCamera
                 )
             ]
     ));
@@ -71,10 +87,10 @@ fn handle_mouse_motion(
     mut mouse_motion: MessageReader<MouseMotion>,
     mut player_query: Query<(&mut Transform, &mut CameraRotation), (With<Player>, Without<PlayerCam>)>,
     mut player_cam_query: Query<&mut Transform, (With<PlayerCam>, Without<Player>)>,
-    game_resources: Res<GameResources>
+    game_resources: Res<GameResources>,
 ) {
 
-    if !game_resources.mouse_grabbed {
+    if !game_resources.mouse_grabbed || game_resources.in_editor{
         return;
     };
     let Ok(mut player_cam) = player_cam_query.single_mut() else {
@@ -104,7 +120,11 @@ fn update(
 
 
 
-fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&mut LinearVelocity, &GlobalTransform, &Player), With<Player>>) {
+fn handle_move_input(keys: Res<ButtonInput<KeyCode>>, mut player_query: Query<(&mut LinearVelocity, &GlobalTransform, &Player), With<Player>>, game_resource: Res<GameResources>) {
+    if game_resource.in_editor || !game_resource.mouse_grabbed{
+
+        return
+    }
     let Ok((mut player_velocity, player_transform, player_info)) = player_query.single_mut() else {return;};
 
     let mut vec = Vec3::ZERO;
@@ -148,6 +168,9 @@ fn handle_mouse_grab(
     mut contexts: EguiContexts,
     )
 {
+    if game_resources.in_editor {
+        return;
+    }
     if keys.just_pressed(KeyCode::Escape) && game_resources.mouse_grabbed && window.cursor_position().is_some(){
         game_resources.mouse_grabbed = false;
     }
