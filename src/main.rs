@@ -13,10 +13,8 @@ pub mod building;
 pub mod resources;
 pub mod player;
 pub mod scene;
-pub mod my_camera;
 use bevy_egui::{EguiGlobalSettings, EguiPlugin};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
 
 use crate::building::BuildingPlugin;
@@ -73,6 +71,10 @@ fn main() {
         .add_plugins(DefaultInspectorConfigPlugin)
         .insert_resource(EguiGlobalSettings {
             auto_create_primary_context: false,
+            ..Default::default()
+        })
+        .insert_resource(TransformGizmoSettings {
+            axis_hit_distance: 10.0,
             ..Default::default()
         })
         .run();   
