@@ -165,7 +165,6 @@ fn handle_mouse_grab(
     keys: Res<ButtonInput<KeyCode>>, 
     mut cursor_option: Single<&mut CursorOptions>, 
     window: Single<&Window, With<PrimaryWindow>>,
-    mut contexts: EguiContexts,
     )
 {
     if game_resources.in_editor {
@@ -176,11 +175,7 @@ fn handle_mouse_grab(
     }
     for button in mouse_button.read() {
         if button.state == ButtonState::Pressed && button.button == MouseButton::Left && !game_resources.mouse_grabbed {
-            let ctx = contexts.ctx_mut().expect("cant use context");
-            let wants_pointer = ctx.egui_wants_pointer_input() || ctx.is_pointer_over_egui();
-            if !wants_pointer {
-                game_resources.mouse_grabbed = true;
-            }
+            game_resources.mouse_grabbed = true;
         }
     }
 

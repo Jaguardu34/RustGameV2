@@ -15,6 +15,7 @@ pub mod player;
 pub mod scene;
 pub mod my_camera;
 use bevy_egui::{EguiGlobalSettings, EguiPlugin};
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use my_camera::MyCamPlugin;
 use scene::MyScenePlugin;
 
@@ -69,5 +70,10 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(FreeCameraPlugin)
         .add_plugins((TransformGizmoPlugin, MeshPickingPlugin))
+        .add_plugins(DefaultInspectorConfigPlugin)
+        .insert_resource(EguiGlobalSettings {
+            auto_create_primary_context: false,
+            ..Default::default()
+        })
         .run();   
 }
