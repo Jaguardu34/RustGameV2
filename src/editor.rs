@@ -1,25 +1,54 @@
-use bevy::{camera::{Viewport, visibility::RenderLayers}, camera_controller::free_camera::FreeCamera, core_pipeline::tonemapping::Tonemapping, input::{ButtonState, gamepad, mouse::MouseButtonInput}, math::VectorSpace, post_process::bloom::Bloom, prelude::*, window::{CursorOptions, PrimaryWindow}};
-use bevy_egui::{EguiContext, EguiContexts, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui::{self, Pos2}};
-use bevy_inspector_egui::bevy_inspector;
+use bevy::{
+    camera::{Viewport, visibility::RenderLayers},
+    camera_controller::free_camera::FreeCamera,
+    color::palettes::css::BLUE,
+    core_pipeline::tonemapping::Tonemapping,
+    ecs::{VariantDefaults, system::entity_command::observe},
+    feathers::{
+        constants::icons,
+        containers::{
+            flex_spacer, group, group_body, group_header, pane, pane_body, pane_header,
+            pane_header_divider, subpane, subpane_body, subpane_header,
+        },
+        controls::{ButtonVariant, FeathersButton, FeathersNumberInput, FeathersToolButton},
+        dark_theme::create_dark_theme,
+        display::{icon, label, label_dim, label_small},
+        palette,
+        theme::{ThemeBackgroundColor, ThemedText, UiTheme},
+        tokens,
+    },
+    input::{ButtonState, gamepad, mouse::MouseButtonInput},
+    math::VectorSpace,
+    post_process::bloom::Bloom,
+    prelude::*,
+    ui_widgets::{Activate, ValueChange},
+    window::{CursorOptions, PrimaryWindow},
+};
 
-use crate::{player::{CameraRotation, Player, PlayerCam}, resources::GameResources};
+use crate::{
+    player::{CameraRotation, Player, PlayerCam},
+    resources::GameResources,
+};
 
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .insert_resource(EditorVar::default())
+        app.insert_resource(EditorVar::default())
             .add_systems(Startup, setup_ui_cam)
-            .add_systems(EguiPrimaryContextPass, (inspector_window, game_view_window, add_elements_window, inspect_element_window))
-            .add_systems(Update, (
-                handle_inputs, 
-                handle_editor_toggle, 
-                sync_gizmo_cam_projection, 
-                handle_picking, 
-                change_selected_entity, 
-                update_viewport
-            ))
+            .add_systems(Startup, ui.spawn())
+            .insert_resource(UiTheme(create_dark_theme()))
+            .add_systems(
+                Update,
+                (
+                    handle_inputs,
+                    handle_editor_toggle,
+                    sync_gizmo_cam_projection,
+                    handle_picking,
+                    change_selected_entity,
+                    update_viewport,
+                ),
+            )
             .add_message::<EditorToggled>();
     }
 }
@@ -34,12 +63,11 @@ pub struct EditorVar {
 #[derive(Default, Clone, Copy)]
 pub struct GameView {
     pub pos: UVec2,
-    pub size: UVec2
+    pub size: UVec2,
 }
 
 #[derive(Message, Default)]
 struct EditorToggled(bool);
-
 
 fn sync_gizmo_cam_projection(
     main: Single<&Projection, With<PlayerCam>>,
@@ -55,9 +83,7 @@ fn sync_gizmo_cam_projection(
 #[derive(Component)]
 pub struct UICam;
 
-fn setup_ui_cam(
-    mut commands: Commands,
-) {
+fn setup_ui_cam(mut commands: Commands) {
     commands.spawn((
         Camera2d::default(),
         Camera {
@@ -67,141 +93,172 @@ fn setup_ui_cam(
             ..Default::default()
         },
         UICam,
-        PrimaryEguiContext,
+        IsDefaultUiCamera,
     ));
 }
 
-// UI
-fn add_elements_window(
-    mut commands: Commands,
-    mut context: EguiContexts,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut editor_var: ResMut<EditorVar>
-) {
-    egui::Window::new("Add Object").show(context.ctx_mut().expect("cant use context"), |ui| {
-        if ui.button("Cube").clicked() {
-            let entity = commands.spawn((
-                Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-                MeshMaterial3d(materials.add(Color::WHITE)),
-                Transform::from_translation(Vec3::ZERO),
-            ));
-            editor_var.selected_entity = Some(entity.id());
-        }
-    });
+//create Feather UI
+fn ui() -> impl SceneList {
+    bsn_list![entity_inspector()]
 }
 
-fn inspect_element_window(
-    world: &mut World
-) {
-
-    let (mut context, selected_entity) = {
-        let mut context = world
-            .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
-            .single(world)
-            .expect("cant find egui context")
-            .clone();
-
-        let selected_entity = world
-            .get_resource::<EditorVar>()
-            .and_then(|var| var.selected_entity);
-
-        (context, selected_entity)
-    };
-
-    egui::Window::new("Inspect Element").show(context.get_mut(), |ui| {
-        if selected_entity.is_some() {
-            bevy_inspector::ui_for_entity(world, selected_entity.unwrap(), ui);
-        } else {
-            ui.label("Select an entity first");
-        }
-    });
+#[derive(Component, Clone, Copy, Default, VariantDefaults)]
+enum PositionVec3Field {
+    #[default]
+    X,
+    Y,
+    Z,
 }
 
-fn game_view_window(
-    mut context: EguiContexts,
-    mut editor_var: ResMut<EditorVar>
-) {
-    let response = egui::Window::new("Game_View")
-        .min_size(egui::Vec2::new(200.0, 200.0))    
-        .resizable(true)
-        .interactable(true)
-        .movable(false)
-        .scroll(false)
-        .collapsible(false)
-        .show(context.ctx_mut().expect("cant_use_context"), |ui| {
-            ui.take_available_space();
-            editor_var.pointer_on_viewport = ui.ui_contains_pointer();
-        });
+#[derive(Component, Clone, Copy, Default)]
+pub struct EntityInspectorWindow;
 
-    if let Some(r) = response {
-        let rect = r.response.rect;
+fn entity_inspector() -> impl Scene {
+    bsn! {
+        Node {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Stretch,
+            justify_content: JustifyContent::Start,
+            padding: px(8),
+            row_gap: px(8),
+            width: percent(30),
+            min_width: px(200),
+        }
+        EntityInspectorWindow
+        on(|on_drag: On<Pointer<Drag>>, mut query: Query<&mut UiTransform>| {
+            if let Ok(mut transform) = query.get_mut(on_drag.event_target()) {
+                if let (Val::Px(x), Val::Px(y)) = (transform.translation.x, transform.translation.y) {
+                    transform.translation.x = Val::Px(x + on_drag.delta.x);
+                    transform.translation.y = Val::Px(y + on_drag.delta.y);
+                }
+            }
+        })
+        Children [
+            (
+                pane() Children [
+                    pane_header() Children [
+                        Text("Entity Inspector")
+                        flex_spacer(),
+                        @FeathersToolButton {
+                            @variant: ButtonVariant::Plain,
+                        }
+                        on(|_on_click: On<Activate>, query: Query<Entity, With<EntityInspectorWindow>>, mut commands: Commands| {
+                            if let Ok(entity) = query.single() {
+                                commands.entity(entity).despawn();
+                            }
+                        })
+                        Children [
+                            icon(icons::X)
+                        ],
 
-        editor_var.game_view_info.pos = UVec2 { x: rect.min.x as u32, y: rect.min.y as u32 + 20 };
-        editor_var.game_view_info.size = UVec2 { x: rect.size().x as u32, y: rect.size().y as u32 - 20 }
+                    ],
+                    (
+                        pane_body() Children [
+                            label_dim("Entity Name"),
+                            group()
+                            Children [
+                                group_header() Children [
+                                    (Text("Transform") ThemedText),
+                                ],
+                                group_body()
+                                Children [
+                                    label("Translation"),
+                                    Node {
+                                        display: Display::Flex,
+                                        flex_direction: FlexDirection::Row,
+                                        column_gap: px(6),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::SpaceBetween,
+                                    }
+                                    Children [
+                                        (
+                                            @FeathersNumberInput {
+                                                @sigil_color: tokens::TEXT_INPUT_X_AXIS,
+                                                @label_text: "X",
+                                            }
+                                            PositionVec3Field::X
+                                            Node {
+                                                flex_grow: 1.0,
+                                            }
+                                            BorderColor::all(palette::X_AXIS)
+                                        ),
+                                        (
+                                            @FeathersNumberInput {
+                                                @sigil_color: tokens::TEXT_INPUT_Y_AXIS,
+                                                @label_text: "Y",
+                                            }
+                                            PositionVec3Field::Y
+                                            Node {
+                                                flex_grow: 1.0,
+                                            }
+                                        ),
+                                        (
+                                            @FeathersNumberInput {
+                                                @sigil_color: tokens::TEXT_INPUT_Z_AXIS,
+                                                @label_text: "Z",
+                                            }
+                                            PositionVec3Field::Z
+                                            Node {
+                                                flex_grow: 1.0,
+                                            }
+                                        ),
+                                    ],
+                                ],
+                            ]
+                        ]
+                    ),
+                ]
+            ),
+        ]
     }
 }
-
-
-fn inspector_window(world: &mut World) {
-    let Ok(mut egui_context) = world
-        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
-        .single_mut(world)
-        .map(|c| c.clone())
-    else {
-        return;
-    };
-
-    egui::Window::new("World Inspector").show(egui_context.get_mut(), |ui| {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            bevy_inspector_egui::bevy_inspector::ui_for_world(world, ui);
-
-            egui::CollapsingHeader::new("Materials").show(ui, |ui| {
-                bevy_inspector_egui::bevy_inspector::ui_for_assets::<StandardMaterial>(world, ui);
-            });
-        });
-    });
-}
-
 
 fn update_viewport(
     mut cam_q: Query<&mut Camera, With<PlayerCam>>,
     editor_var: Res<EditorVar>,
-    game_resource: Res<GameResources>
+    game_resource: Res<GameResources>,
 ) {
-    let Ok(mut cam) = cam_q.single_mut() else {return};
+    let Ok(mut cam) = cam_q.single_mut() else {
+        return;
+    };
 
     if !game_resource.in_editor {
         cam.viewport = None
     } else {
-        cam.viewport = Some(Viewport { physical_position: editor_var.game_view_info.pos, physical_size: editor_var.game_view_info.size, ..Default::default()})
+        cam.viewport = Some(Viewport {
+            physical_position: UVec2 { x: 0, y: 800 },
+            physical_size: UVec2 { x: 1000, y: 500 },
+            ..Default::default()
+        })
     }
-
 }
-
-
 
 fn handle_inputs(
     keys: Res<ButtonInput<KeyCode>>,
     mut game_resource: ResMut<GameResources>,
-    mut toggle_message_writer: MessageWriter<EditorToggled>
+    mut toggle_message_writer: MessageWriter<EditorToggled>,
 ) {
     if keys.just_pressed(KeyCode::F12) {
         game_resource.in_editor = !game_resource.in_editor;
         toggle_message_writer.write(EditorToggled(game_resource.in_editor));
     }
-
 }
 
 fn handle_editor_toggle(
     mut commands: Commands,
-    mut cam_q: Query<(Entity, &mut Transform, &GlobalTransform, &mut Camera), (With<PlayerCam>, Without<UICam>)>,
+    mut cam_q: Query<
+        (Entity, &mut Transform, &GlobalTransform, &mut Camera),
+        (With<PlayerCam>, Without<UICam>),
+    >,
     player_q: Single<(Entity, &CameraRotation), With<Player>>,
     mut toggled: MessageReader<EditorToggled>,
     mut game_resource: ResMut<GameResources>,
     ui_cam_q: Single<&mut Camera, (With<UICam>, Without<PlayerCam>)>,
 ) {
-    let Ok((cam_e, mut cam_t, cam_gt, mut player_cam)) = cam_q.single_mut() else {return;};
+    let Ok((cam_e, mut cam_t, cam_gt, mut player_cam)) = cam_q.single_mut() else {
+        return;
+    };
     let (player_e, rot) = *player_q;
     let mut ui_cam = ui_cam_q;
 
@@ -220,14 +277,12 @@ fn handle_editor_toggle(
                 .remove::<FreeCamera>()
                 .insert(RenderLayers::layer(0));
             commands.entity(player_e).add_child(cam_e);
-            *cam_t = Transform::from_xyz(0.0, 1.5, 0.0)
-                .with_rotation(Quat::from_rotation_x(rot.pitch));
+            *cam_t =
+                Transform::from_xyz(0.0, 1.5, 0.0).with_rotation(Quat::from_rotation_x(rot.pitch));
             ui_cam.is_active = false;
         }
     }
 }
-
-
 
 fn handle_picking(
     game_resource: Res<GameResources>,
@@ -236,7 +291,7 @@ fn handle_picking(
     window: Single<&Window, With<PrimaryWindow>>,
     camera_q: Single<(&Camera, &GlobalTransform), With<PlayerCam>>,
     mut ray_cast: MeshRayCast,
-    gizmo_state: Res<TransformGizmoState>
+    gizmo_state: Res<TransformGizmoState>,
 ) {
     if !game_resource.in_editor {
         return;
@@ -244,32 +299,46 @@ fn handle_picking(
 
     let (camera, camera_transform) = *camera_q;
 
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    let physical_cursor = cursor_position * window.scale_factor();
+
+    if !camera
+        .physical_viewport_rect()
+        .unwrap()
+        .contains(physical_cursor.as_uvec2())
+    {
+        return;
+    }
+
     for button in mouse_button.read() {
         if button.state != ButtonState::Pressed || button.button != MouseButton::Left {
-            continue;
-        }
-        if !editor_var.pointer_on_viewport {
             continue;
         }
         if gizmo_state.hovered_axis.is_some() || gizmo_state.active {
             continue;
         }
-        let Some(cursor_position) = window.cursor_position() else { continue };
-        let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else { continue };
 
-        let settings = MeshRayCastSettings::default()
-            .with_visibility(RayCastVisibility::Visible); 
+        let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+            continue;
+        };
 
-        if let Some((entity, hit)) = ray_cast.cast_ray(ray, &settings).first() {
+        let settings = MeshRayCastSettings::default().with_visibility(RayCastVisibility::Visible);
+        if let Some((entity, _hit)) = ray_cast.cast_ray(ray, &settings).first() {
             editor_var.selected_entity = Some(*entity);
         } else {
-            editor_var.selected_entity = None; 
+            editor_var.selected_entity = None;
         }
     }
 }
 
-
-fn change_selected_entity(mut commands: Commands, editor_var: Res<EditorVar>, transform_gizmo_focus_q: Query<Entity, With<TransformGizmoFocus>>, game_resource: Res<GameResources>) {
+fn change_selected_entity(
+    mut commands: Commands,
+    editor_var: Res<EditorVar>,
+    transform_gizmo_focus_q: Query<Entity, With<TransformGizmoFocus>>,
+    game_resource: Res<GameResources>,
+) {
     if game_resource.in_editor {
         if editor_var.selected_entity.is_some() {
             let entity = editor_var.selected_entity.unwrap();
@@ -277,7 +346,9 @@ fn change_selected_entity(mut commands: Commands, editor_var: Res<EditorVar>, tr
 
             for entity_with_focus in transform_gizmo_focus_q {
                 if entity_with_focus != entity {
-                    commands.entity(entity_with_focus).remove::<TransformGizmoFocus>();
+                    commands
+                        .entity(entity_with_focus)
+                        .remove::<TransformGizmoFocus>();
                 }
             }
         } else {
