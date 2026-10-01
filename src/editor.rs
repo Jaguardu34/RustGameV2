@@ -1,28 +1,21 @@
 use bevy::{
     camera::{Viewport, visibility::RenderLayers},
     camera_controller::free_camera::FreeCamera,
-    color::palettes::css::BLUE,
-    core_pipeline::tonemapping::Tonemapping,
-    ecs::{VariantDefaults, system::entity_command::observe},
+    ecs::VariantDefaults,
     feathers::{
         constants::icons,
-        containers::{
-            flex_spacer, group, group_body, group_header, pane, pane_body, pane_header,
-            pane_header_divider, subpane, subpane_body, subpane_header,
-        },
-        controls::{ButtonVariant, FeathersButton, FeathersNumberInput, FeathersToolButton},
+        containers::{flex_spacer, group, group_body, group_header, pane, pane_body, pane_header},
+        controls::{ButtonVariant, FeathersNumberInput, FeathersToolButton, UpdateNumberInput},
         dark_theme::create_dark_theme,
-        display::{icon, label, label_dim, label_small},
+        display::{icon, label, label_dim},
         palette,
-        theme::{ThemeBackgroundColor, ThemedText, UiTheme},
+        theme::{ThemedText, UiTheme},
         tokens,
     },
-    input::{ButtonState, gamepad, mouse::MouseButtonInput},
-    math::VectorSpace,
-    post_process::bloom::Bloom,
+    input::{ButtonState, mouse::MouseButtonInput},
     prelude::*,
     ui_widgets::{Activate, ValueChange},
-    window::{CursorOptions, PrimaryWindow},
+    window::PrimaryWindow,
 };
 
 use crate::{
@@ -47,9 +40,13 @@ impl Plugin for EditorPlugin {
                     handle_picking,
                     change_selected_entity,
                     update_viewport,
+                    update_entity_inspector,
+                    handle_transform_updates,
                 ),
             )
-            .add_message::<EditorToggled>();
+            .add_message::<EditorToggled>()
+            .add_message::<SelectedEntityChange>()
+            .add_message::<UpdateEntityPosition>();
     }
 }
 
@@ -60,14 +57,33 @@ pub struct EditorVar {
     pub pointer_on_viewport: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpatialAxis {
+    X,
+    Y,
+    Z,
+}
+
+#[derive(Message)] // or #[derive(Event)] depending on your messaging crate
+pub struct UpdateEntityPosition {
+    pub entity: Entity,
+    pub axis: SpatialAxis,
+    pub value: f32,
+}
+
 #[derive(Default, Clone, Copy)]
 pub struct GameView {
     pub pos: UVec2,
     pub size: UVec2,
 }
+#[derive(Component)]
+pub struct UICam;
 
 #[derive(Message, Default)]
 struct EditorToggled(bool);
+
+#[derive(Message)]
+struct SelectedEntityChange;
 
 fn sync_gizmo_cam_projection(
     main: Single<&Projection, With<PlayerCam>>,
@@ -79,9 +95,6 @@ fn sync_gizmo_cam_projection(
         }
     }
 }
-
-#[derive(Component)]
-pub struct UICam;
 
 fn setup_ui_cam(mut commands: Commands) {
     commands.spawn((
@@ -110,8 +123,12 @@ enum PositionVec3Field {
     Z,
 }
 
+//the component on the whole windows
 #[derive(Component, Clone, Copy, Default)]
 pub struct EntityInspectorWindow;
+
+#[derive(Component, Clone, Copy, Default)]
+pub struct EntityInspectorWindowContent;
 
 fn entity_inspector() -> impl Scene {
     bsn! {
@@ -154,59 +171,9 @@ fn entity_inspector() -> impl Scene {
 
                     ],
                     (
-                        pane_body() Children [
-                            label_dim("Entity Name"),
-                            group()
-                            Children [
-                                group_header() Children [
-                                    (Text("Transform") ThemedText),
-                                ],
-                                group_body()
-                                Children [
-                                    label("Translation"),
-                                    Node {
-                                        display: Display::Flex,
-                                        flex_direction: FlexDirection::Row,
-                                        column_gap: px(6),
-                                        align_items: AlignItems::Center,
-                                        justify_content: JustifyContent::SpaceBetween,
-                                    }
-                                    Children [
-                                        (
-                                            @FeathersNumberInput {
-                                                @sigil_color: tokens::TEXT_INPUT_X_AXIS,
-                                                @label_text: "X",
-                                            }
-                                            PositionVec3Field::X
-                                            Node {
-                                                flex_grow: 1.0,
-                                            }
-                                            BorderColor::all(palette::X_AXIS)
-                                        ),
-                                        (
-                                            @FeathersNumberInput {
-                                                @sigil_color: tokens::TEXT_INPUT_Y_AXIS,
-                                                @label_text: "Y",
-                                            }
-                                            PositionVec3Field::Y
-                                            Node {
-                                                flex_grow: 1.0,
-                                            }
-                                        ),
-                                        (
-                                            @FeathersNumberInput {
-                                                @sigil_color: tokens::TEXT_INPUT_Z_AXIS,
-                                                @label_text: "Z",
-                                            }
-                                            PositionVec3Field::Z
-                                            Node {
-                                                flex_grow: 1.0,
-                                            }
-                                        ),
-                                    ],
-                                ],
-                            ]
-                        ]
+                        EntityInspectorWindowContent
+                        pane_body()
+                        Children[Text("No Entity Selected")]
                     ),
                 ]
             ),
@@ -214,9 +181,153 @@ fn entity_inspector() -> impl Scene {
     }
 }
 
+//update the entity inspector window
+fn update_entity_inspector(
+    node_entity_q: Query<Entity, With<EntityInspectorWindowContent>>,
+    mut commands: Commands,
+    mut msg_reader: MessageReader<SelectedEntityChange>,
+    editor_var: Res<EditorVar>,
+    info_q: Query<&Name>,
+    q_vec3_input: Query<(Entity, &PositionVec3Field)>,
+    transform_q: Query<&Transform>,
+) {
+    if editor_var.selected_entity.is_some() {
+        let target_entity = editor_var.selected_entity.unwrap();
+        if let Ok(transform) = transform_q.get(target_entity) {
+            for (vec3_input_ent, axis) in q_vec3_input.iter() {
+                let new_value = match axis {
+                    PositionVec3Field::X => transform.translation.x,
+                    PositionVec3Field::Y => transform.translation.y,
+                    PositionVec3Field::Z => transform.translation.z,
+                };
+
+                commands.trigger(UpdateNumberInput {
+                    entity: vec3_input_ent,
+                    value: bevy::feathers::controls::NumberInputValue::F32(
+                        (new_value * 100.0).round() / 100.0,
+                    ),
+                });
+            }
+        }
+    }
+    for _ in msg_reader.read() {
+        let Ok(entity) = node_entity_q.single() else {
+            return;
+        };
+        if editor_var.selected_entity.is_some() {
+            let Ok(name) = info_q.get(editor_var.selected_entity.unwrap()) else {
+                return;
+            };
+            let target_entity = editor_var.selected_entity.unwrap();
+            commands.entity(entity).despawn_children();
+            let child = commands
+                .spawn_scene(bsn! {
+                    Node {
+                        display: Display::Flex,
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(8),
+                        width: percent(100.0),
+                    }
+                    Children [
+                        label_dim(format!("Name: {}", name)),
+                        group() Children [
+                            group_header() Children [
+                                (Text("Transform") ThemedText),
+                            ],
+                            group_body() Children [
+                                label("Translation"),
+                                Node {
+                                    display: Display::Flex,
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: px(6),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                }
+                                Children [
+                                    (
+                                        @FeathersNumberInput {
+                                            @sigil_color: tokens::TEXT_INPUT_X_AXIS,
+                                            @label_text: "X",
+                                        }
+                                        PositionVec3Field::X
+                                        Node { flex_grow: 1.0 }
+                                        BorderColor::all(palette::X_AXIS)
+                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
+                                            if value_change.is_final {
+                                                writer.write(UpdateEntityPosition {
+                                                    entity:  target_entity,
+                                                    axis: SpatialAxis::X,
+                                                    value: value_change.value,
+                                                });
+                                            }
+                                        })
+                                    ),
+                                    (
+                                        @FeathersNumberInput {
+                                            @sigil_color: tokens::TEXT_INPUT_Y_AXIS,
+                                            @label_text: "Y",
+                                        }
+                                        PositionVec3Field::Y
+                                        Node { flex_grow: 1.0 }
+                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
+                                            if value_change.is_final {
+                                                writer.write(UpdateEntityPosition {
+                                                    entity:  target_entity,
+                                                    axis: SpatialAxis::Y,
+                                                    value: value_change.value,
+                                                });
+                                            }
+                                        })
+                                    ),
+                                    (
+                                        @FeathersNumberInput {
+                                            @sigil_color: tokens::TEXT_INPUT_Z_AXIS,
+                                            @label_text: "Z",
+                                        }
+                                        PositionVec3Field::Z
+                                        Node { flex_grow: 1.0 }
+                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
+                                            if value_change.is_final {
+                                                writer.write(UpdateEntityPosition {
+                                                    entity: target_entity,
+                                                    axis: SpatialAxis::Z,
+                                                    value: value_change.value,
+                                                });
+                                            }
+                                        })
+                                    ),
+                                ],
+                            ],
+                        ],
+                    ]
+                })
+                .id();
+            commands.entity(entity).add_child(child);
+        } else {
+            commands.entity(entity).despawn_children();
+            let child = commands.spawn(Text("No Entity Selected".to_string())).id();
+            commands.entity(entity).add_child(child);
+        }
+    }
+}
+
+fn handle_transform_updates(
+    mut reader: MessageReader<UpdateEntityPosition>,
+    mut query: Query<&mut Transform>,
+) {
+    for msg in reader.read() {
+        if let Ok(mut transform) = query.get_mut(msg.entity) {
+            match msg.axis {
+                SpatialAxis::X => transform.translation.x = msg.value,
+                SpatialAxis::Y => transform.translation.y = msg.value,
+                SpatialAxis::Z => transform.translation.z = msg.value,
+            }
+        }
+    }
+}
+
 fn update_viewport(
     mut cam_q: Query<&mut Camera, With<PlayerCam>>,
-    editor_var: Res<EditorVar>,
     game_resource: Res<GameResources>,
 ) {
     let Ok(mut cam) = cam_q.single_mut() else {
@@ -292,6 +403,7 @@ fn handle_picking(
     camera_q: Single<(&Camera, &GlobalTransform), With<PlayerCam>>,
     mut ray_cast: MeshRayCast,
     gizmo_state: Res<TransformGizmoState>,
+    mut msg_writer: MessageWriter<SelectedEntityChange>,
 ) {
     if !game_resource.in_editor {
         return;
@@ -327,8 +439,10 @@ fn handle_picking(
         let settings = MeshRayCastSettings::default().with_visibility(RayCastVisibility::Visible);
         if let Some((entity, _hit)) = ray_cast.cast_ray(ray, &settings).first() {
             editor_var.selected_entity = Some(*entity);
+            msg_writer.write(SelectedEntityChange);
         } else {
             editor_var.selected_entity = None;
+            msg_writer.write(SelectedEntityChange);
         }
     }
 }
