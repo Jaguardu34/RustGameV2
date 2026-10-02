@@ -23,6 +23,10 @@ use crate::{
     resources::GameResources,
 };
 
+use crate::editor_ui::entity_inspector::{
+    UpdateEntityPosition, entity_inspector, handle_transform_updates, update_entity_inspector,
+};
+
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
@@ -57,20 +61,6 @@ pub struct EditorVar {
     pub pointer_on_viewport: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpatialAxis {
-    X,
-    Y,
-    Z,
-}
-
-#[derive(Message)] // or #[derive(Event)] depending on your messaging crate
-pub struct UpdateEntityPosition {
-    pub entity: Entity,
-    pub axis: SpatialAxis,
-    pub value: f32,
-}
-
 #[derive(Default, Clone, Copy)]
 pub struct GameView {
     pub pos: UVec2,
@@ -83,7 +73,7 @@ pub struct UICam;
 struct EditorToggled(bool);
 
 #[derive(Message)]
-struct SelectedEntityChange;
+pub struct SelectedEntityChange;
 
 fn sync_gizmo_cam_projection(
     main: Single<&Projection, With<PlayerCam>>,
@@ -115,217 +105,7 @@ fn ui() -> impl SceneList {
     bsn_list![entity_inspector()]
 }
 
-#[derive(Component, Clone, Copy, Default, VariantDefaults)]
-enum PositionVec3Field {
-    #[default]
-    X,
-    Y,
-    Z,
-}
-
-//the component on the whole windows
-#[derive(Component, Clone, Copy, Default)]
-pub struct EntityInspectorWindow;
-
-#[derive(Component, Clone, Copy, Default)]
-pub struct EntityInspectorWindowContent;
-
-fn entity_inspector() -> impl Scene {
-    bsn! {
-        Node {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Stretch,
-            justify_content: JustifyContent::Start,
-            padding: px(8),
-            row_gap: px(8),
-            width: percent(30),
-            min_width: px(200),
-        }
-        EntityInspectorWindow
-        on(|on_drag: On<Pointer<Drag>>, mut query: Query<&mut UiTransform>| {
-            if let Ok(mut transform) = query.get_mut(on_drag.event_target()) {
-                if let (Val::Px(x), Val::Px(y)) = (transform.translation.x, transform.translation.y) {
-                    transform.translation.x = Val::Px(x + on_drag.delta.x);
-                    transform.translation.y = Val::Px(y + on_drag.delta.y);
-                }
-            }
-        })
-        Children [
-            (
-                pane() Children [
-                    pane_header() Children [
-                        Text("Entity Inspector")
-                        flex_spacer(),
-                        @FeathersToolButton {
-                            @variant: ButtonVariant::Plain,
-                        }
-                        on(|_on_click: On<Activate>, query: Query<Entity, With<EntityInspectorWindow>>, mut commands: Commands| {
-                            if let Ok(entity) = query.single() {
-                                commands.entity(entity).despawn();
-                            }
-                        })
-                        Children [
-                            icon(icons::X)
-                        ],
-
-                    ],
-                    (
-                        EntityInspectorWindowContent
-                        pane_body()
-                        Children[Text("No Entity Selected")]
-                    ),
-                ]
-            ),
-        ]
-    }
-}
-
-//update the entity inspector window
-fn update_entity_inspector(
-    node_entity_q: Query<Entity, With<EntityInspectorWindowContent>>,
-    mut commands: Commands,
-    mut msg_reader: MessageReader<SelectedEntityChange>,
-    editor_var: Res<EditorVar>,
-    info_q: Query<&Name>,
-    q_vec3_input: Query<(Entity, &PositionVec3Field)>,
-    transform_q: Query<&Transform>,
-) {
-    if editor_var.selected_entity.is_some() {
-        let target_entity = editor_var.selected_entity.unwrap();
-        if let Ok(transform) = transform_q.get(target_entity) {
-            for (vec3_input_ent, axis) in q_vec3_input.iter() {
-                let new_value = match axis {
-                    PositionVec3Field::X => transform.translation.x,
-                    PositionVec3Field::Y => transform.translation.y,
-                    PositionVec3Field::Z => transform.translation.z,
-                };
-
-                commands.trigger(UpdateNumberInput {
-                    entity: vec3_input_ent,
-                    value: bevy::feathers::controls::NumberInputValue::F32(
-                        (new_value * 100.0).round() / 100.0,
-                    ),
-                });
-            }
-        }
-    }
-    for _ in msg_reader.read() {
-        let Ok(entity) = node_entity_q.single() else {
-            return;
-        };
-        if editor_var.selected_entity.is_some() {
-            let Ok(name) = info_q.get(editor_var.selected_entity.unwrap()) else {
-                return;
-            };
-            let target_entity = editor_var.selected_entity.unwrap();
-            commands.entity(entity).despawn_children();
-            let child = commands
-                .spawn_scene(bsn! {
-                    Node {
-                        display: Display::Flex,
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(8),
-                        width: percent(100.0),
-                    }
-                    Children [
-                        label_dim(format!("Name: {}", name)),
-                        group() Children [
-                            group_header() Children [
-                                (Text("Transform") ThemedText),
-                            ],
-                            group_body() Children [
-                                label("Translation"),
-                                Node {
-                                    display: Display::Flex,
-                                    flex_direction: FlexDirection::Row,
-                                    column_gap: px(6),
-                                    align_items: AlignItems::Center,
-                                    justify_content: JustifyContent::SpaceBetween,
-                                }
-                                Children [
-                                    (
-                                        @FeathersNumberInput {
-                                            @sigil_color: tokens::TEXT_INPUT_X_AXIS,
-                                            @label_text: "X",
-                                        }
-                                        PositionVec3Field::X
-                                        Node { flex_grow: 1.0 }
-                                        BorderColor::all(palette::X_AXIS)
-                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
-                                            if value_change.is_final {
-                                                writer.write(UpdateEntityPosition {
-                                                    entity:  target_entity,
-                                                    axis: SpatialAxis::X,
-                                                    value: value_change.value,
-                                                });
-                                            }
-                                        })
-                                    ),
-                                    (
-                                        @FeathersNumberInput {
-                                            @sigil_color: tokens::TEXT_INPUT_Y_AXIS,
-                                            @label_text: "Y",
-                                        }
-                                        PositionVec3Field::Y
-                                        Node { flex_grow: 1.0 }
-                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
-                                            if value_change.is_final {
-                                                writer.write(UpdateEntityPosition {
-                                                    entity:  target_entity,
-                                                    axis: SpatialAxis::Y,
-                                                    value: value_change.value,
-                                                });
-                                            }
-                                        })
-                                    ),
-                                    (
-                                        @FeathersNumberInput {
-                                            @sigil_color: tokens::TEXT_INPUT_Z_AXIS,
-                                            @label_text: "Z",
-                                        }
-                                        PositionVec3Field::Z
-                                        Node { flex_grow: 1.0 }
-                                        on(move |value_change: On<ValueChange<f32>>, mut writer: MessageWriter<UpdateEntityPosition>| {
-                                            if value_change.is_final {
-                                                writer.write(UpdateEntityPosition {
-                                                    entity: target_entity,
-                                                    axis: SpatialAxis::Z,
-                                                    value: value_change.value,
-                                                });
-                                            }
-                                        })
-                                    ),
-                                ],
-                            ],
-                        ],
-                    ]
-                })
-                .id();
-            commands.entity(entity).add_child(child);
-        } else {
-            commands.entity(entity).despawn_children();
-            let child = commands.spawn(Text("No Entity Selected".to_string())).id();
-            commands.entity(entity).add_child(child);
-        }
-    }
-}
-
-fn handle_transform_updates(
-    mut reader: MessageReader<UpdateEntityPosition>,
-    mut query: Query<&mut Transform>,
-) {
-    for msg in reader.read() {
-        if let Ok(mut transform) = query.get_mut(msg.entity) {
-            match msg.axis {
-                SpatialAxis::X => transform.translation.x = msg.value,
-                SpatialAxis::Y => transform.translation.y = msg.value,
-                SpatialAxis::Z => transform.translation.z = msg.value,
-            }
-        }
-    }
-}
-
+// update the gameviewport to the right place on the screen
 fn update_viewport(
     mut cam_q: Query<&mut Camera, With<PlayerCam>>,
     game_resource: Res<GameResources>,
@@ -345,6 +125,7 @@ fn update_viewport(
     }
 }
 
+// handle the various keymaps for the editor
 fn handle_inputs(
     keys: Res<ButtonInput<KeyCode>>,
     mut game_resource: ResMut<GameResources>,
@@ -356,18 +137,16 @@ fn handle_inputs(
     }
 }
 
+// handle the cam changement from player_cam behaviour to freecam behavior, (same cam for simplicity)
 fn handle_editor_toggle(
     mut commands: Commands,
-    mut cam_q: Query<
-        (Entity, &mut Transform, &GlobalTransform, &mut Camera),
-        (With<PlayerCam>, Without<UICam>),
-    >,
+    mut cam_q: Query<(Entity, &mut Transform, &GlobalTransform), (With<PlayerCam>, Without<UICam>)>,
     player_q: Single<(Entity, &CameraRotation), With<Player>>,
     mut toggled: MessageReader<EditorToggled>,
     mut game_resource: ResMut<GameResources>,
     ui_cam_q: Single<&mut Camera, (With<UICam>, Without<PlayerCam>)>,
 ) {
-    let Ok((cam_e, mut cam_t, cam_gt, mut player_cam)) = cam_q.single_mut() else {
+    let Ok((cam_e, mut cam_t, cam_gt)) = cam_q.single_mut() else {
         return;
     };
     let (player_e, rot) = *player_q;
@@ -395,6 +174,7 @@ fn handle_editor_toggle(
     }
 }
 
+// custom meshPicking function
 fn handle_picking(
     game_resource: Res<GameResources>,
     mut editor_var: ResMut<EditorVar>,
@@ -447,6 +227,7 @@ fn handle_picking(
     }
 }
 
+// update the game resource and change the TransformGizmoFocus to the entity of EditorVar.selected_entity
 fn change_selected_entity(
     mut commands: Commands,
     editor_var: Res<EditorVar>,

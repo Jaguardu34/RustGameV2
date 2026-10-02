@@ -15,6 +15,7 @@ pub mod player;
 pub mod resources;
 pub mod scene;
 use scene::MyScenePlugin;
+pub mod editor_ui;
 
 use crate::building::BuildingPlugin;
 use crate::editor::EditorPlugin;
