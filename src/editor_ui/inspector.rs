@@ -23,6 +23,16 @@ pub enum SpatialAxis {
     Z,
 }
 
+pub struct InspectorWindowPl;
+
+impl Plugin for InspectorWindowPl {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, (update_entity_inspector, handle_transform_updates))
+            .add_systems(Startup, ui.spawn())
+            .add_message::<UpdateEntityPosition>();
+    }
+}
+
 // the message send when the use input a transform
 #[derive(Message)]
 pub struct UpdateEntityPosition {
@@ -42,21 +52,21 @@ pub enum TransformType {
 
 // components to query the transforms input
 #[derive(Component, Clone, Copy, Default, VariantDefaults)]
-pub enum TranslationVec3Field {
+enum TranslationVec3Field {
     #[default]
     X,
     Y,
     Z,
 }
 #[derive(Component, Clone, Copy, Default, VariantDefaults)]
-pub enum ScaleVec3Field {
+enum ScaleVec3Field {
     #[default]
     X,
     Y,
     Z,
 }
 #[derive(Component, Clone, Copy, Default, VariantDefaults)]
-pub enum RotationVec3Field {
+enum RotationVec3Field {
     #[default]
     X,
     Y,
@@ -65,13 +75,13 @@ pub enum RotationVec3Field {
 
 //the component on the whole windows
 #[derive(Component, Clone, Copy, Default)]
-pub struct EntityInspectorWindow;
+struct EntityInspectorWindow;
 
 #[derive(Component, Clone, Copy, Default)]
-pub struct EntityInspectorWindowContent;
+struct EntityInspectorWindowContent;
 
 // initialize the entity_inspector window
-pub fn entity_inspector() -> impl Scene {
+fn ui() -> impl Scene {
     bsn! {
         Node {
             display: Display::Flex,
@@ -123,7 +133,7 @@ pub fn entity_inspector() -> impl Scene {
 }
 
 //update the entity inspector window
-pub fn update_entity_inspector(
+fn update_entity_inspector(
     node_entity_q: Query<Entity, With<EntityInspectorWindowContent>>,
     mut commands: Commands,
     mut msg_reader: MessageReader<SelectedEntityChange>,
@@ -425,7 +435,7 @@ pub fn update_entity_inspector(
 }
 
 // handle the entity transformations from the entity editor
-pub fn handle_transform_updates(
+fn handle_transform_updates(
     mut reader: MessageReader<UpdateEntityPosition>,
     mut query: Query<&mut Transform>,
 ) {

@@ -1,39 +1,25 @@
 use bevy::{
     camera::{Viewport, visibility::RenderLayers},
     camera_controller::free_camera::FreeCamera,
-    ecs::VariantDefaults,
-    feathers::{
-        constants::icons,
-        containers::{flex_spacer, group, group_body, group_header, pane, pane_body, pane_header},
-        controls::{ButtonVariant, FeathersNumberInput, FeathersToolButton, UpdateNumberInput},
-        dark_theme::create_dark_theme,
-        display::{icon, label, label_dim},
-        palette,
-        theme::{ThemedText, UiTheme},
-        tokens,
-    },
+    feathers::{dark_theme::create_dark_theme, theme::UiTheme},
     input::{ButtonState, mouse::MouseButtonInput},
     prelude::*,
-    ui_widgets::{Activate, ValueChange},
     window::PrimaryWindow,
 };
 
 use crate::{
+    editor_ui::{gizmo_config::GizmoConfigWindowPl, inspector::InspectorWindowPl},
     player::{CameraRotation, Player, PlayerCam},
     resources::GameResources,
-};
-
-use crate::editor_ui::entity_inspector::{
-    UpdateEntityPosition, entity_inspector, handle_transform_updates, update_entity_inspector,
 };
 
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(EditorVar::default())
+        app.add_plugins((GizmoConfigWindowPl, InspectorWindowPl))
+            .insert_resource(EditorVar::default())
             .add_systems(Startup, setup_ui_cam)
-            .add_systems(Startup, ui.spawn())
             .insert_resource(UiTheme(create_dark_theme()))
             .add_systems(
                 Update,
@@ -44,13 +30,10 @@ impl Plugin for EditorPlugin {
                     handle_picking,
                     change_selected_entity,
                     update_viewport,
-                    update_entity_inspector,
-                    handle_transform_updates,
                 ),
             )
             .add_message::<EditorToggled>()
-            .add_message::<SelectedEntityChange>()
-            .add_message::<UpdateEntityPosition>();
+            .add_message::<SelectedEntityChange>();
     }
 }
 
@@ -98,11 +81,6 @@ fn setup_ui_cam(mut commands: Commands) {
         UICam,
         IsDefaultUiCamera,
     ));
-}
-
-//create Feather UI
-fn ui() -> impl SceneList {
-    bsn_list![entity_inspector()]
 }
 
 // update the gameviewport to the right place on the screen

@@ -1,1 +1,2 @@
-pub mod entity_inspector;
+pub mod gizmo_config;
+pub mod inspector;
