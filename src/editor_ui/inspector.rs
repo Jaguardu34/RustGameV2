@@ -13,7 +13,7 @@ use bevy::feathers::{palette, tokens};
 use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, ValueChange};
 
-use crate::editor::{EditorVar, SelectedEntityChange};
+use crate::editor::{EditorVar, FeatherWindow, SelectedEntityChange};
 
 // my own axis enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +83,7 @@ struct EntityInspectorWindowContent;
 // initialize the entity_inspector window
 fn ui() -> impl Scene {
     bsn! {
+        FeatherWindow
         Node {
             display: Display::Flex,
             flex_direction: FlexDirection::Column,

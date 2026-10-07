@@ -3,6 +3,7 @@ use bevy::{
     camera_controller::free_camera::FreeCamera,
     feathers::{dark_theme::create_dark_theme, theme::UiTheme},
     input::{ButtonState, mouse::MouseButtonInput},
+    math::ops::abs,
     prelude::*,
     window::PrimaryWindow,
 };
@@ -14,6 +15,9 @@ use crate::{
 };
 
 pub struct EditorPlugin;
+
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct FeatherWindow;
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
@@ -29,7 +33,7 @@ impl Plugin for EditorPlugin {
                     sync_gizmo_cam_projection,
                     handle_picking,
                     change_selected_entity,
-                    update_viewport,
+                    //update_viewport,
                 ),
             )
             .add_message::<EditorToggled>()
@@ -73,7 +77,7 @@ fn setup_ui_cam(mut commands: Commands) {
     commands.spawn((
         Camera2d::default(),
         Camera {
-            order: -1,
+            order: 2,
             clear_color: ClearColorConfig::Custom(Color::srgb(0.1, 0.1, 0.12)),
             is_active: false,
             ..Default::default()
@@ -162,6 +166,7 @@ fn handle_picking(
     mut ray_cast: MeshRayCast,
     gizmo_state: Res<TransformGizmoState>,
     mut msg_writer: MessageWriter<SelectedEntityChange>,
+    window_query: Query<(&ComputedNode, &UiTransform), With<FeatherWindow>>,
 ) {
     if !game_resource.in_editor {
         return;
@@ -182,6 +187,16 @@ fn handle_picking(
         return;
     }
 
+    for (window, transform) in window_query.iter() {
+        let size = window.size;
+        if let (Val::Px(x), Val::Px(y)) = (transform.translation.x, transform.translation.y) {
+            let pos = Vec2::new(x, y);
+            let node_rect = Rect::from_center_size(pos, size);
+            if node_rect.contains(physical_cursor) {
+                return;
+            }
+        }
+    }
     for button in mouse_button.read() {
         if button.state != ButtonState::Pressed || button.button != MouseButton::Left {
             continue;

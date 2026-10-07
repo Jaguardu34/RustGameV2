@@ -12,6 +12,8 @@ use bevy::{
     ui_widgets::Activate,
 };
 
+use crate::editor::FeatherWindow;
+
 pub struct GizmoConfigWindowPl;
 
 impl Plugin for GizmoConfigWindowPl {
@@ -52,6 +54,7 @@ struct ButtonClicked(GizmoType);
 
 fn ui() -> impl Scene {
     bsn! {
+        FeatherWindow
         Node {
             display: Display::Flex,
             flex_direction: FlexDirection::Column,
@@ -110,11 +113,8 @@ fn ui() -> impl Scene {
                             flex_grow: 1.0,
                         }
                         AccessibleLabel("Move")
-                        on(|_activate: On<Activate>| {
-                            info!("Left button clicked!");
-                        })
                         GizmoType::Move
-                        on(move |_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
+                        on(|_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
                             writer.write(ButtonClicked(GizmoType::Move));
                         })
                     ),
@@ -127,11 +127,8 @@ fn ui() -> impl Scene {
                             flex_grow: 1.0,
                         }
                         AccessibleLabel("Rotate")
-                        on(|_activate: On<Activate>| {
-                            info!("Center button clicked!");
-                        })
                         GizmoType::Rotate
-                        on(move |_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
+                        on(|_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
                             writer.write(ButtonClicked(GizmoType::Rotate));
                         })
                     ),
@@ -144,11 +141,8 @@ fn ui() -> impl Scene {
                             flex_grow: 1.0,
                         }
                         AccessibleLabel("Scale")
-                        on(|_activate: On<Activate>| {
-                            info!("Right button clicked!");
-                        })
                         GizmoType::Scale
-                        on(move |_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
+                        on(|_: On<Activate>, mut writer: MessageWriter<ButtonClicked>| {
                             writer.write(ButtonClicked(GizmoType::Scale));
                         })
 
